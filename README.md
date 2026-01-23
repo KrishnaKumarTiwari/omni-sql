@@ -109,3 +109,99 @@ curl -X POST http://localhost:8000/v1/query \
 ---
 
 ## 🏗 Architecture
+## 🏗 Architecture
+
+OmniSQL uses a **federated query architecture** that separates the Control Plane (governance) from the Data Plane (execution).
+
+### High-Level Components
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Control Plane                        │
+│  (Tenant Registry, Policy Store, Secrets, Audit Logs)  │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                     Data Plane                          │
+│                                                         │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐         │
+│  │  Query   │───▶│  Query   │───▶│Connector │         │
+│  │ Gateway  │    │ Planner  │    │ Workers  │         │
+│  └──────────┘    └──────────┘    └──────────┘         │
+│                         │                               │
+│                         ▼                               │
+│                  ┌──────────────┐                      │
+│                  │Materialization│                      │
+│                  │   (DuckDB)    │                      │
+│                  └──────────────┘                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Key Design Principles
+
+1. **Zero-Persistence** - No permanent storage of source data; all joins are ephemeral
+2. **Predicate Pushdown** - Filters are pushed to SaaS APIs to minimize data transfer
+3. **Policy-First Security** - RLS/CLS enforced at query planning time, not post-fetch
+4. **Hybrid Execution** - On-the-fly joins for small datasets, materialization for large-scale
+5. **BYOC Ready** - Data Plane can run in customer VPC while Control Plane remains managed
+
+### Documentation
+
+- **Detailed Design**: [docs/DESIGN.md](docs/DESIGN.md) - Full architecture, trade-offs, and component breakdown
+- **Production Structure**: [docs/PRODUCTION_STRUCTURE.md](docs/PRODUCTION_STRUCTURE.md) - Enterprise-grade modular architecture
+- **Execution Plan**: [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md) - 6-month roadmap with milestones
+- **Prototype Guide**: [prototype/PROTOTYPE.md](prototype/PROTOTYPE.md) - How to run and verify the prototype
+
+---
+
+## 🧪 Testing
+
+### Functional Tests
+```bash
+pytest prototype/tests/test_functional.py
+```
+
+### Load Testing (k6)
+```bash
+k6 run prototype/tests/load_test.js
+```
+
+**Target**: 500-1k QPS with P50 < 500ms
+
+---
+
+## 📊 Observability
+
+### Prometheus Metrics
+Access metrics at `http://localhost:8000/metrics`
+
+Key metrics:
+- `omnisql_queries_total` - Total queries by status code
+- `omnisql_query_latency_seconds` - Query execution latency histogram
+
+### Tracing
+Every response includes a `trace_id` for distributed tracing correlation.
+
+---
+
+## 🚀 Deployment
+
+### Local Development
+```bash
+export PYTHONPATH=. && python prototype/main.py
+```
+
+### Docker
+```bash
+docker-compose up
+```
+
+### Production (Kubernetes)
+See [docs/PRODUCTION_STRUCTURE.md](docs/PRODUCTION_STRUCTURE.md) for Helm charts and deployment topology.
+
+---
+
+## 📝 License
+
+MIT License - See LICENSE file for details.
