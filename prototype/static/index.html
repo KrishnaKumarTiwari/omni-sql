@@ -1,28 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OmniSQL Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            --bg: #0d1117;
-            --surface: #161b22;
-            --border: #30363d;
-            --primary: #58a6ff;
-            --text: #c9d1d9;
+            --bg: #111110;
+            /* Ema-style warm deep dark */
+            --surface: #1a1d21;
+            --border: #2d3139;
+            --primary: #1F8844;
+            /* Ema Emerald Green */
+            --primary-hover: #1a763a;
+            --text: #f7f6f2;
+            /* Ema off-white */
             --text-dim: #8b949e;
-            --accent: #238636;
+            --accent: #1F8844;
             --danger: #f85149;
+            --selection: rgba(31, 136, 68, 0.3);
         }
 
         body {
             background-color: var(--bg);
             color: var(--text);
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
             margin: 0;
             display: flex;
             flex-direction: column;
@@ -85,7 +93,9 @@
             text-transform: uppercase;
         }
 
-        select, input, textarea {
+        select,
+        input,
+        textarea {
             background: var(--bg);
             border: 1px solid var(--border);
             color: var(--text);
@@ -131,7 +141,7 @@
             gap: 1rem;
             padding: 1rem;
             border-bottom: 1px solid var(--border);
-            background: rgba(255,255,255,0.02);
+            background: rgba(255, 255, 255, 0.02);
         }
 
         .meta-item {
@@ -155,7 +165,7 @@
         th {
             text-align: left;
             padding: 0.75rem 1rem;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-bottom: 1px solid var(--border);
             color: var(--text-dim);
         }
@@ -172,8 +182,15 @@
             font-weight: 600;
         }
 
-        .status-success { background: rgba(35, 134, 54, 0.2); color: #3fb950; }
-        .status-error { background: rgba(248, 81, 73, 0.2); color: #f85149; }
+        .status-success {
+            background: rgba(35, 134, 54, 0.2);
+            color: #3fb950;
+        }
+
+        .status-error {
+            background: rgba(248, 81, 73, 0.2);
+            color: #f85149;
+        }
 
         .loader {
             display: none;
@@ -183,6 +200,7 @@
         }
     </style>
 </head>
+
 <body>
     <header>
         <h1>OmniSQL Console</h1>
@@ -240,7 +258,9 @@ WHERE jira.status = 'In Progress'</textarea>
                 </div>
                 <div style="overflow-x: auto;">
                     <table id="results-table">
-                        <thead><tr id="table-head"></tr></thead>
+                        <thead>
+                            <tr id="table-head"></tr>
+                        </thead>
                         <tbody id="table-body"></tbody>
                     </table>
                 </div>
@@ -335,4 +355,5 @@ WHERE jira.status = 'In Progress'</textarea>
         }
     </script>
 </body>
+
 </html>
