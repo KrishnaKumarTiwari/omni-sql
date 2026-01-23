@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+duckdb
+pandas
+requests
+prometheus_client
+opentelemetry-api
+opentelemetry-sdk
+numpy

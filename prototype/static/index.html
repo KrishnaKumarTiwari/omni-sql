@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniSQL Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --primary: #58a6ff;
+            --text: #c9d1d9;
+            --text-dim: #8b949e;
+            --accent: #238636;
+            --danger: #f85149;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface);
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            margin: 0;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 320px;
+            padding: 1.5rem;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            background: var(--surface);
+        }
+
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            gap: 1rem;
+            background: var(--bg);
+            overflow-y: auto;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        select, input, textarea {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+
+        textarea {
+            font-family: 'JetBrains Mono', monospace;
+            resize: none;
+            min-height: 150px;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .results-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255,255,255,0.02);
+        }
+
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .meta-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--primary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border-bottom: 1px solid var(--border);
+            color: var(--text-dim);
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .status {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .status-success { background: rgba(35, 134, 54, 0.2); color: #3fb950; }
+        .status-error { background: rgba(248, 81, 73, 0.2); color: #f85149; }
+
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>OmniSQL Console</h1>
+        <div id="api-status" class="status status-success">CONNECTED</div>
+    </header>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="field">
+                <label>Access Token</label>
+                <select id="token">
+                    <option value="token_dev">Developer (Full Access)</option>
+                    <option value="token_qa">QA Role (Masked PII)</option>
+                    <option value="token_web_dev">Web Team (RLS Filtered)</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Max Staleness (ms)</label>
+                <input type="number" id="staleness" value="5000" step="1000">
+            </div>
+            <div class="field">
+                <label>Quick Queries</label>
+                <button onclick="setQuery('join')">Cross-App Join</button>
+                <button onclick="setQuery('github')">GitHub Only</button>
+                <button onclick="setQuery('jira')">Jira Only</button>
+            </div>
+        </div>
+
+        <div class="main">
+            <div class="field">
+                <label>SQL Query</label>
+                <textarea id="sql">SELECT gh.pr_id, gh.author, jira.status as jira_status 
+FROM github.pull_requests gh 
+JOIN jira.issues jira ON gh.branch = jira.branch_name 
+WHERE jira.status = 'In Progress'</textarea>
+            </div>
+            <button onclick="runQuery()">Execute Query</button>
+
+            <div id="loader" class="loader">Executing federated query...</div>
+
+            <div id="result-container" class="results-card" style="display:none">
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <label>Freshness</label>
+                        <div id="res-freshness" class="meta-value">-</div>
+                    </div>
+                    <div class="meta-item">
+                        <label>Remaining Budget</label>
+                        <div id="res-budget" class="meta-value">-</div>
+                    </div>
+                    <div class="meta-item">
+                        <label>Trace ID</label>
+                        <div id="res-trace" class="meta-value">-</div>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table id="results-table">
+                        <thead><tr id="table-head"></tr></thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function setQuery(type) {
+            const queries = {
+                join: "SELECT gh.pr_id, gh.author, jira.status as jira_status \nFROM github.pull_requests gh \nJOIN jira.issues jira ON gh.branch = jira.branch_name \nWHERE jira.status = 'In Progress'",
+                github: "SELECT * FROM github.pull_requests",
+                jira: "SELECT * FROM jira.issues"
+            };
+            document.getElementById('sql').value = queries[type];
+        }
+
+        async function runQuery() {
+            const sql = document.getElementById('sql').value;
+            const token = document.getElementById('token').value;
+            const staleness = document.getElementById('staleness').value;
+            const loader = document.getElementById('loader');
+            const resultContainer = document.getElementById('result-container');
+
+            loader.style.display = 'block';
+            resultContainer.style.display = 'none';
+
+            try {
+                const response = await fetch('/v1/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-user-token': token
+                    },
+                    body: JSON.stringify({
+                        sql: sql,
+                        metadata: { max_staleness_ms: parseInt(staleness) }
+                    })
+                });
+
+                const data = await response.json();
+                loader.style.display = 'none';
+                resultContainer.style.display = 'flex';
+
+                if (response.status !== 200) {
+                    showError(data.detail || "Unknown error");
+                    return;
+                }
+
+                renderResults(data);
+            } catch (e) {
+                loader.style.display = 'none';
+                showError("Network error: " + e.message);
+            }
+        }
+
+        function renderResults(data) {
+            document.getElementById('res-freshness').textContent = `${data.freshness_ms}ms`;
+            document.getElementById('res-budget').textContent = data.rate_limit_status.remaining;
+            document.getElementById('res-trace').textContent = data.trace_id.split('-')[0] + '...';
+
+            const head = document.getElementById('table-head');
+            const body = document.getElementById('table-body');
+            head.innerHTML = '';
+            body.innerHTML = '';
+
+            data.columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                head.appendChild(th);
+            });
+
+            data.rows.forEach(row => {
+                const tr = document.createElement('tr');
+                data.columns.forEach(col => {
+                    const td = document.createElement('td');
+                    td.textContent = row[col];
+                    tr.appendChild(td);
+                });
+                body.appendChild(tr);
+            });
+        }
+
+        function showError(msg) {
+            const body = document.getElementById('table-body');
+            const head = document.getElementById('table-head');
+            head.innerHTML = '<th>Error</th>';
+            body.innerHTML = `<tr><td style="color:var(--danger)">${msg}</td></tr>`;
+            document.getElementById('res-freshness').textContent = '-';
+            document.getElementById('res-budget').textContent = '-';
+            document.getElementById('res-trace').textContent = '-';
+        }
+    </script>
+</body>
+</html>

@@ -1,7 +1,8 @@
 import time
 import uuid
+import os
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -18,6 +19,10 @@ QUERY_LATENCY = Histogram('omnisql_query_latency_seconds', 'Query execution late
 class QueryRequest(BaseModel):
     sql: str
     metadata: Optional[Dict[str, Any]] = {}
+
+@app.get("/")
+async def get_console():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 @app.get("/metrics")
 async def metrics():
