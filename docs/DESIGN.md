@@ -54,6 +54,13 @@ OmniSQL utilizes **Logical Isolation with Physical Guardrails**:
 - **Crypto-Shredding**: Org off-boarding triggers immediate deletion of tenant-scoped KMS keys and job cancellation.
 - **Threat Model**: STRIDE analysis is applied to every component, with automated pentest readiness.
 
+### 2.3 Cost Controls
+To manage the economics of federated queries at scale, OmniSQL implements multi-layered cost controls:
+- **Rate Limit as Cost Proxy**: Global and tenant-level token buckets act as a proxy for egress and operation costs.
+- **Query Complexity Quotas**: The Query Optimizer estimates the cost (rows fetched/compute) before execution; expensive joins are rejected with `PLAN_FAILED`.
+- **Cache-First Optimization**: High `max_staleness` values are encouraged via pricing or quotas to reduce expensive downstream SaaS calls.
+- **Resource Limiting**: Compute for materialization (DuckDB) is capped per-tenant to prevent runaway resource consumption.
+
 ---
 
 ## 3. Detailed Component Breakdown
