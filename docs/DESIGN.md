@@ -21,9 +21,17 @@ The "Engine" of the system, optimized for high-throughput, low-latency execution
 - **Async Job Runners**: Handles long-running queries that exceed synchronous timeouts.
 
 ### 1.3 Join & Execution Strategy
-OmniSQL employs a hybrid execution model:
-- **Federated On-the-Fly**: For simple queries or small result sets from multiple sources, data is streamed directly to the Query Gateway for final assembly.
-- **Short-Lived Materialization**: For complex `JOIN` operations across massive datasets, OmniSQL spills data to a high-speed, short-lived materialization layer (backed by DuckDB or Parquet on S3). This layer is encrypted with tenant-scoped keys and is strictly transient (TTL $\le$ N minutes).
+OmniSQL employs a hybrid execution model to balance performance, cost, and complexity:
+
+| Strategy | Mechanism | Best For | Trade-offs |
+| :--- | :--- | :--- | :--- |
+| **Federated On-the-Fly** | Data is streamed from multiple sources and joined in-memory at the Gateway. | Small datasets, simple filters, low concurrency. | High Gateway memory usage; limited to "small-ish" joins. |
+| **Short-Lived Materialization** | Parallel fetch → Spill to high-speed transient storage (DuckDB/S3) → Join → Shred. | Large-scale cross-app joins (e.g., millions of rows). | Transient I/O overhead; higher compute cost. |
+
+#### Technical Rationale:
+- **Zero-Persistence Guarantee**: Both strategies ensure data never enters a permanent warehouse. In "Short-Lived Materialization," the transient storage is ephemeral, encrypted with tenant-scoped keys, and wiped immediately post-query.
+- **Predicate Pushdown**: We aggressively push filters (WHERE clauses) to the SaaS APIs to minimize data transfer for both strategies.
+- **Materialization Trigger**: The Query Planner automatically switches to "Short-Lived Materialization" if the estimated intermediate result set exceeds the Gateway's safe memory threshold (e.g., > 100k rows).
 
 ### 1.4 Error Vocabulary
 OmniSQL provides a standardized error model for developer clarity:
@@ -67,13 +75,16 @@ To manage the economics of federated queries at scale, OmniSQL implements multi-
 
 | Component | Responsibility | Key Features |
 | :--- | :--- | :--- |
-| **Query Gateway** | API Entry & Auth | **POST /v1/query**, OIDC/OPA AuthZ, P90 Timeout Management. |
-| **Query Planner** | Optimization | Capability discovery, Predicate/Column Pushdown, Join planning. |
-| **Connector SDK** | SaaS Interface | Standardized error codes, pagination, token refresh, concurrency contracts. |
-| **Entitlements** | RLS/CLS | Merges source permissions with local OPA policies at plan time. |
-| **Rate-Limit Svc** | Governance | Token buckets per User/Tenant/Connector; Async overflow path. |
-| **Freshness Layer** | Caching | TTL-based, Conditional requests (ETag), Incremental snapshots. |
-| **Observability** | Telemetry | **OpenTelemetry Traces**, **Prometheus Metrics**, Exemplar Dashboards. |
+| **Query Gateway** | Face of the System | AuthN (OIDC), AuthZ (Policy), request shaping, timeouts. Returns results + metadata (`freshness_ms`, `rate_limit_status`, `trace_id`). |
+| **Query Planner** | Intelligence Layer | Capability discovery, predicate/column pushdown, join plan, cost/freshness hints, spill-to-materialization logic. |
+| **Connector SDK** | SaaS Interface | Capability model (tables/fields/ops/limits), auth/token refresh, pagination, concurrency contracts, standardized error codes. |
+| **Entitlement Svc** | Security Engine | Merges source permissions (e.g., GitHub Teams) with tenant-level policies to compute RLS/CLS at plan time. |
+| **Rate-Limit Svc** | Governance | Token buckets/concurrency pools per connector/tenant/user; backoff and budget allocation; async overflow path. |
+| **Freshness Layer** | Data Latency | TTL caches, conditional requests (ETag), incremental snapshots; per-source staleness contracts. |
+| **Materialization** | Compute Layer | Short-lived tables (DuckDB/Parquet on S3) for massive joins; strictly transient lifecycle (TTL $\le$ N minutes); encrypted per tenant. |
+| **Metadata Catalog** | Persistence | Postgres-backed store for schemas, policies, and tenant configurations; migrations via Flyway/Liquibase. |
+| **Secrets & Keys** | Security Core | HashiCorp Vault + Cloud KMS (tenant-scoped keys); automated rotation and break-glass protocols. |
+| **Observability** | Telemetry | OpenTelemetry traces, Prometheus metrics, structured logging; exemplar-linked dashboards and proactive alerts. |
 
 ---
 

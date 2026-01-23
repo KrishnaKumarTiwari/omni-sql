@@ -2,33 +2,38 @@
 
 This prototype demonstrates a cross-app join between **GitHub** and **Jira**, incorporating the core architecture concepts of OmniSQL.
 
-## 🏗 Prototype Components
+## 🏗 Prototype Mapping to Modular Design
 
-1. **Query Gateway**:
-   - **Interface**: `POST /v1/query` (Accepts SQL, returns JSON results + metadata).
-   - **AuthN/AuthZ**: Simulates OIDC token validation and OPA entitlement checks.
+The prototype implements the core logic of the modular architecture within a simplified codebase:
 
-2. **Policy Configuration**:
-   - **RLS**: Filters PRs based on the user's `team_id`.
-   - **CLS**: Masks the `author_email` field for users without the `PII_ACCESS` scope.
-
-3. **Governance**:
-   - **Rate Limiting**: Token Bucket with burst support (50 tokens, 10/sec refill).
-   - **Freshness**: `max_staleness_ms` parameter to toggle between cache and live fetch.
-
-4. **Observability**:
-   - **Prometheus**: Tracks `http_requests_total` and `query_latency_ms`.
-   - **Tracing**: Traces the full request path including connector call time.
+1. **Query Gateway**: [prototype/main.py](main.py)
+   - Handles `POST /v1/query`, AuthN simulation, and metadata response shaping.
+   
+2. **Query Planner & Materialization**: [prototype/engine.py](engine.py)
+   - DuckDB acts as the transient materialization layer.
+   
+3. **Connector SDK**: [prototype/connectors/base.py](connectors/base.py)
+   - Standardized interface for SaaS interactions.
+   
+4. **Entitlement Service**: [prototype/utils/security.py](utils/security.py)
+   - Implements OPA-style RLS and CLS (Masking).
+   
+5. **Rate-Limit Service**: [prototype/governance/rate_limit.py](governance/rate_limit.py)
+   - Thread-safe Token Bucket implementation.
+   
+6. **Observability**: Integrated via `prometheus_client` in `main.py`.
 
 ---
 
-## 🏗 Join & Execution Strategy
+## 🏗 Join & Execution Strategy: Short-Lived Materialization
 
-This prototype demonstrates a **Short-Lived Materialization** strategy:
-- Data is fetched from GitHub and Jira concurrently.
-- Filters are pushed down to the mock connectors (Predicate Pushdown).
-- The resulting filtered datasets are "materialized" into an in-memory **DuckDB** instance.
-- The complex cross-app join is performed within DuckDB, simulating a transient execution environment that is wiped after the query lifecycle.
+This prototype demonstrates OmniSQL's **Short-Lived Materialization** strategy, which is the "gold standard" for complex, high-volume cross-app joins:
+
+1. **Parallel Ingress**: Data is fetched from GitHub and Jira simultaneously.
+2. **Predicate Pushdown**: Filters (e.g., `jira.status = 'In Progress'`) are pushed to the mock connectors to minimize data ingress into the prototype.
+3. **Transient Materialization**: The filtered datasets are "shredded" into an in-memory **DuckDB** instance. DuckDB acting as a high-speed, transient execution engine.
+4. **Final Assembly**: The complex join is performed within DuckDB.
+5. **Auto-Shredding**: The in-memory data is automatically wiped when the request lifecycle ends, ensuring zero persistence.
 
 ---
 
