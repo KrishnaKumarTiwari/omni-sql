@@ -218,3 +218,38 @@ For extremely high-scale or complex connectors, OmniSQL supports a **sidecar mod
 - Connectors run as independent containers.
 - Communication happens via a standardized **gRPC contract**.
 - This enables polyglot connectors (e.g., a high-perf C++ connector for a custom DB) and independent scaling of the connector layer from the query engine.
+
+---
+
+## 8. Architectural Trade-offs & Rationale
+
+This section justifies the core design decisions against functional and non-functional requirements (NFRs).
+
+### 8.1 CAP Theorem in Federation
+In a federated environment, OmniSQL prioritizes **Availability (A)** and **Partition Tolerance (P)** over strict **Consistency (C)**.
+- **Rationale**: If a single downstream SaaS (e.g., Jira) is down, the system should still respond with available data (e.g., GitHub) and a partial success metadata flag rather than blocking the entire query.
+- **Trade-off**: Users may see slightly stale data from one source while another is live. This is managed via the `max_staleness_ms` parameter.
+
+### 8.2 Security: Early vs. Late Binding
+| Strategy | Implementation | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **Early Binding (RLS)** | Filters injected into source API calls (GitHub Teams). | Minimal data egress; higher performance. | Dependent on SaaS API filtering capabilities. |
+| **Late Binding (CLS)** | Masking applied at the Query Gateway post-fetch. | Uniform security across all sources. | Higher egress cost; Gateway compute overhead. |
+- **OmniSQL Choice**: A hybrid approach. We push RLS to sources whenever possible (Early) but enforce CLS and complex policies at the Gateway (Late) for a "Guaranteed Safe" result.
+
+### 8.3 Latency vs. Cost vs. Freshness
+The "Triple Constraint" of federated queries:
+- **Low Latency (< 500ms)**: Requires excessive caching.
+- **Low Cost**: Requires fewer SaaS API calls (caching).
+- **High Freshness (0ms staleness)**: Requires bypassing caches.
+- **Design Choice**: The **Freshness Layer** uses a "Tidal" caching strategy. High-tier customers get shorter TTLs, while standard queries default to 60s cache blocks. This protects SaaS rate limits while maintaining acceptable NFRs.
+
+### 8.4 Materialization: Transience vs. Persistence
+- **Choice**: **Short-Lived Materialization** (DuckDB/S3).
+- **Pros**: Zero-persistence (Security/Privacy compliance), lower storage cost, zero data gravity.
+- **Cons**: Warm-up time for large joins; higher transient I/O.
+- **Trade-off**: We accept a slight P99 latency hit for millions of rows to guarantee the **Zero-Persistence** security mandate, which is non-negotiable for enterprise SaaS.
+
+### 8.5 Control Plane vs. Data Plane
+- **Choice**: Physical separation.
+- **Rationale**: The Data Plane can be deployed **BYOC (Bring Your Own Cloud)** at the customer site while the Control Plane remains managed by OmniSQL. This satisfies complex compliance requirements while keeping the management overhead low.

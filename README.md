@@ -51,3 +51,61 @@ FROM github.pull_requests gh
 JOIN jira.issues jira ON gh.branch = jira.branch_name
 WHERE jira.status = 'In Progress'
 ```
+
+---
+
+## 🎬 Quick Demo
+
+### Interactive Web Console
+
+Access the web console at `http://localhost:8000/` for one-click query demos with a beautiful Ema.co-themed interface.
+
+### Cross-App Query Examples
+
+#### 1. Issues to PR Mapping (Core Federated Join)
+```bash
+curl -X POST http://localhost:8000/v1/query \
+  -H "Content-Type: application/json" \
+  -H "X-User-Token: token_dev" \
+  -d '{
+    "sql": "SELECT gh.pr_id, gh.author, gh.branch, ji.issue_key, ji.status as jira_status FROM github.pull_requests gh JOIN jira.issues ji ON gh.branch = ji.branch_name WHERE ji.status = '\''In Progress'\''",
+    "metadata": {"max_staleness_ms": 0}
+  }'
+```
+
+**What this demonstrates**:
+- Real-time join across GitHub (120 PRs) and Jira (120 issues)
+- RLS filtering (only shows data for user's team)
+- CLS masking (email addresses hashed for non-PII users)
+- Freshness tracking (live fetch vs cache)
+
+#### 2. Security Audit Query
+```bash
+curl -X POST http://localhost:8000/v1/query \
+  -H "Content-Type: application/json" \
+  -H "X-User-Token: token_dev" \
+  -d '{
+    "sql": "SELECT gh.pr_id, gh.merged_at, ji.issue_key, ji.status FROM github.pull_requests gh JOIN jira.issues ji ON gh.branch = ji.branch_name WHERE gh.status = '\''merged'\'' AND ji.status != '\''Done'\''",
+    "metadata": {"max_staleness_ms": 5000}
+  }'
+```
+
+**What this demonstrates**:
+- Finding merged PRs with unresolved Jira tickets
+- Cache usage (5s staleness tolerance)
+- Rate limit tracking in response
+
+#### 3. Effort Mapping (Story Points vs Code Changes)
+```bash
+curl -X POST http://localhost:8000/v1/query \
+  -H "Content-Type: application/json" \
+  -H "X-User-Token: token_dev" \
+  -d '{
+    "sql": "SELECT ji.issue_key, ji.story_points, (gh.additions + gh.deletions) as total_loc FROM jira.issues ji JOIN github.pull_requests gh ON ji.branch_name = gh.branch ORDER BY total_loc DESC LIMIT 10",
+    "metadata": {}
+  }'
+```
+
+---
+
+## 🏗 Architecture

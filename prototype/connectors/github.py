@@ -8,14 +8,38 @@ class GitHubConnector(BaseConnector):
         
     def fetch_data(self, query_context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Mock data for Pull Requests.
+        Mock data for Pull Requests (100+ records).
         Each PR has a branch name to join with Jira issues.
         """
-        return [
-            {"pr_id": 1, "author": "dev_a", "author_email": "dev_a@ema.co", "branch": "PRJ-101-fix-auth", "status": "open", "review_status": "APPROVED", "team_id": "mobile", "created_at": "2026-01-20T10:00:00Z", "assignee": "senior_dev", "additions": 145, "deletions": 12},
-            {"pr_id": 2, "author": "dev_b", "author_email": "dev_b@ema.co", "branch": "PRJ-102-ui-fixes", "status": "open", "review_status": "CHANGES_REQUESTED", "team_id": "web", "created_at": "2026-01-21T11:00:00Z", "assignee": "ui_lead", "additions": 45, "deletions": 2},
-            {"pr_id": 3, "author": "dev_c", "author_email": "dev_c@ema.co", "branch": "PRJ-103-api-v2", "status": "merged", "review_status": "APPROVED", "team_id": "api", "created_at": "2026-01-22T09:00:00Z", "merged_at": "2026-01-22T15:30:00Z", "assignee": "api_ninja", "additions": 890, "deletions": 412},
-            {"pr_id": 4, "author": "dev_a", "author_email": "dev_a@ema.co", "branch": "PRJ-104-mobile-app", "status": "open", "review_status": "PENDING", "team_id": "mobile", "created_at": "2026-01-23T14:00:00Z", "assignee": "dev_a", "additions": 320, "deletions": 45},
-            {"pr_id": 5, "author": "dev_d", "author_email": "dev_d@ema.co", "branch": "PRJ-105-infra-as-code", "status": "open", "review_status": "PENDING", "team_id": "infra", "created_at": "2026-01-24T08:00:00Z", "assignee": "sre_master", "additions": 1200, "deletions": 50},
-            {"pr_id": 6, "author": "dev_b", "author_email": "dev_b@ema.co", "branch": "PRJ-106-security-patch", "status": "merged", "review_status": "APPROVED", "team_id": "web", "created_at": "2026-01-24T09:30:00Z", "merged_at": "2026-01-24T10:15:00Z", "assignee": "sec_lead", "additions": 12, "deletions": 8},
-        ]
+        teams = ["mobile", "web", "api", "infra", "data"]
+        statuses = ["open", "merged", "closed"]
+        review_statuses = ["APPROVED", "CHANGES_REQUESTED", "PENDING", "COMMENTED"]
+        authors = ["dev_a", "dev_b", "dev_c", "dev_d", "dev_e", "dev_f", "dev_g", "dev_h"]
+        
+        data = []
+        for i in range(1, 121):  # Generate 120 records
+            team = teams[i % len(teams)]
+            status = statuses[i % len(statuses)]
+            review = review_statuses[i % len(review_statuses)]
+            author = authors[i % len(authors)]
+            
+            record = {
+                "pr_id": i,
+                "author": author,
+                "author_email": f"{author}@ema.co",
+                "branch": f"PRJ-{i:03d}-feature-{team}",
+                "status": status,
+                "review_status": review,
+                "team_id": team,
+                "created_at": f"2026-01-{(i % 28) + 1:02d}T{(i % 24):02d}:00:00Z",
+                "assignee": f"lead_{team}",
+                "additions": (i * 13) % 1000,
+                "deletions": (i * 7) % 200,
+            }
+            
+            if status == "merged":
+                record["merged_at"] = f"2026-01-{(i % 28) + 1:02d}T{((i + 5) % 24):02d}:00:00Z"
+            
+            data.append(record)
+        
+        return data
