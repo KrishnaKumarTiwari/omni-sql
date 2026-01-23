@@ -37,17 +37,31 @@ This prototype demonstrates OmniSQL's **Short-Lived Materialization** strategy, 
 
 ---
 
-## 📖 Error Vocabulary
+## 4. SQL & Policy Surface Implementation
 
-The following standardized errors are implemented in this prototype:
-- `RATE_LIMIT_EXHAUSTED`: Returned when the mock connector's token bucket is empty.
-- `STALE_DATA`: (Simulated via logs) when cache constraints are not met.
-- `ENTITLEMENT_DENIED`: Returned as a 403 when OPA-style RLS/CLS rules block access.
-- `SOURCE_TIMEOUT`: (Simulated) when downstream network latency exceeds the gateway timeout.
+The prototype demonstrates the core concepts of the SQL and Policy surface:
+
+### 4.1 SQL Subset Execution
+The `FederatedEngine` ([engine.py](prototype/engine.py)) simulates a query planner that:
+1.  Fetches raw data from connectors.
+2.  Applies security policies.
+3.  Registers data as temporary views in **DuckDB**.
+4.  Executes a join query (simulating the compiled plan).
+
+### 4.2 Policy DSL Prototype
+The policies are currently implemented in [security.py](prototype/utils/security.py) as Python logic, mimicking the behavior of a compiled DSL:
+
+- **RLS**: The `apply_rls` method filters list items based on the `user_context["team_id"]`.
+- **CLS**: The `apply_cls` method uses `hashlib` to mask `author_email` and hides columns for specific roles (e.g., hiding `author` for `qa` role).
+
+### 4.3 Compilation Simulation
+In a production system, this would be a code-generation or AST-transformation step. In the prototype, this is seen in `engine.py` where:
+- Security methods are called *immediately after* data is fetched from the "source" (simulating predicate pushdown/early filter).
+- The final SQL query in DuckDB operates only on this "safe" filtered data.
 
 ---
 
-## 🚀 How to Run & Verify
+## 5. 🚀 How to Run & Verify
 
 ### 1. Prerequisites
 - Python 3.9+
@@ -73,8 +87,8 @@ k6 run prototype/tests/load_test.js
 
 ---
 
-## 🧪 Verification Criteria
-1. **Security**: Role `qa` cannot see `gh.diff_link` (CLS masking).
+## 6. 🧪 Verification Criteria
+1. **Security**: Role `qa` cannot see `gh.author` (CLS masking).
 2. **Entitlements**: `Team: Mobile` only sees PRs with `team_id = 'mobile'`.
 3. **Rate Limits**: 429 response after 50 rapid requests, with `Retry-After` header.
 4. **Performance**: Log shows `trace_id` and connector fetch time (aiming for P50 < 500ms).

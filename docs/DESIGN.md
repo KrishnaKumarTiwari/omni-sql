@@ -90,7 +90,53 @@ To manage the economics of federated queries at scale, OmniSQL implements multi-
 
 ## 4. SQL & Policy Surface
 
-### 4.1 Interface: `POST /v1/query`
+OmniSQL provides a familiar SQL interface for developers while enforcing complex security and governance rules through a Policy DSL.
+
+### 4.1 Supported SQL Subset (The "Safe" Surface)
+To ensure performance and multi-tenant safety, OmniSQL exposes a curated subset of ANSI SQL:
+- **Operations**: `SELECT`, `WHERE`, `LIMIT`, `ORDER BY`, `GROUP BY`.
+- **Joins**: `INNER JOIN`, `LEFT JOIN` (between federated tables).
+- **Projections**: Column aliasing, basic aggregations (`COUNT`, `SUM`, `AVG`).
+- **Restrictions**: No `UPDATE/DELETE/INSERT`, no DDL (`CREATE/DROP`) via the query gateway.
+
+### 4.2 Policy DSL (RLS/CLS)
+Security policies are defined using a structured YAML DSL, which the **Entitlement Service** evaluates at runtime.
+
+#### Row-Level Security (RLS)
+Used to restrict which rows a user can see based on their identity or attributes.
+```yaml
+# Example: Team Isolation Policy
+name: "github_team_isolation"
+target: "github.pull_requests"
+type: "RLS"
+rule: "team_id = {{user.team_id}}"
+```
+
+#### Column-Level Security (CLS) & Masking
+Used to hide or transform sensitive data in specific columns.
+```yaml
+# Example: PII Masking
+name: "pii_masking"
+target: "github.pull_requests"
+type: "CLS"
+actions:
+  - column: "author_email"
+    rule: "hash_hmac(val, 'secret_salt')"
+  - column: "internal_notes"
+    rule: "BLOCK" # Entirely removes the column from the result
+```
+
+### 4.3 Policy Compilation & Query Planning
+Policies are not just "applied" to the final result; they are **compiled** into the query plan for efficiency.
+
+1.  **Parsing**: The Query Gateway parses the incoming SQL.
+2.  **Enrichment**: The Entitlement Service fetches all active policies for the user/tenant.
+3.  **Compilation**:
+    - **RLS Injection**: RLS filters are appended to the `WHERE` clause of the sub-queries sent to connectors. If the connector doesn't support the filter, it is applied during the materialization phase.
+    - **CLS Transformation**: CLS rules are injected as `SELECT` transformations. A column marked `BLOCK` is removed from the internal projection, while masking rules are wrapped around the source column (e.g., `SELECT sha256(email) ...`).
+4.  **Execution**: The final "Safe SQL" is executed against the materialized views in the Data Plane.
+
+### 4.4 Interface: `POST /v1/query`
 The primary interface for both multi-tenant and single-tenant modes.
 - **Request Body**:
   ```json
@@ -109,16 +155,6 @@ The primary interface for both multi-tenant and single-tenant modes.
     "trace_id": "abc-123"
   }
   ```
-
-### 4.2 Policy Configuration
-OmniSQL uses a centralized `policy.yaml` (translated to OPA) for unified governance:
-```yaml
-policies:
-  - id: "rls_by_team"
-    rule: "SELECT * FROM github.pull_requests WHERE team_id = user.team_id"
-  - id: "mask_contributor_email"
-    rule: "MASK email WITH 'sha256' FOR ALL EXCEPT role:admin"
-```
 
 ---
 
@@ -140,3 +176,45 @@ policies:
   - **RPO (Recovery Point Objective)**: < 5 minutes for metadata/cache configuration.
   - **RTO (Recovery Time Objective)**: < 15 minutes for Data Plane failover to secondary region.
 - **Operational Readiness**: See [OPERATIONS.md](OPERATIONS.md) for detailed Runbooks and deployment strategies.
+
+---
+
+## 7. Zero-Code Connector Onboarding
+
+To avoid the overhead of writing and deploying new code for every SaaS integration, OmniSQL supports two advanced patterns for rapid onboarding.
+
+### 7.1 Declarative API Mapping (YAML)
+Instead of a Python/Go class, a developer provides a YAML manifest that defines the mapping between a REST/GraphQL API and the OmniSQL schema.
+
+**Example `connector.yaml`**:
+```yaml
+id: "linear_app"
+base_url: "https://api.linear.app/v1"
+auth:
+  type: "bearer"
+  token_ref: "vault://secrets/linear/token"
+tables:
+  - name: "issues"
+    endpoint: "/issues"
+    method: "GET"
+    selector: "$.data.nodes"
+    columns:
+      id: "$.id"
+      title: "$.title"
+      status: "$.status.name"
+      assigned_to: "$.assignee.name"
+```
+A **Universal API Connector** in the Data Plane ingests this YAML and dynamically generates the fetch logic, pagination, and rate-limiting.
+
+### 7.2 MCP (Model Context Protocol) Integration
+OmniSQL can act as an **MCP Client**. Any SaaS that provides an **MCP Server** can be connected with zero code changes in OmniSQL.
+
+- **Discovery**: OmniSQL queries the MCP server for available resources (tables) and tools.
+- **Translation**: It maps MCP "Resources" to SQL Tables and "Tools" to SQL Stored Procedures/Functions.
+- **Standardization**: This allows the ecosystem to build connectors (e.g., Slack, Notion, Salesforce) that OmniSQL can use immediately.
+
+### 7.3 Connector Sidecars (The Service Mesh Pattern)
+For extremely high-scale or complex connectors, OmniSQL supports a **sidecar model**:
+- Connectors run as independent containers.
+- Communication happens via a standardized **gRPC contract**.
+- This enables polyglot connectors (e.g., a high-perf C++ connector for a custom DB) and independent scaling of the connector layer from the query engine.
