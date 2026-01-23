@@ -46,7 +46,8 @@ async def execute_query(request: QueryRequest, x_user_token: str = Header(None))
                 status_code=429,
                 headers={"Retry-After": str(result.get("retry_after", 5))},
                 content={
-                    "error": "Rate limit exceeded for connector",
+                    "error": "RATE_LIMIT_EXHAUSTED",
+                    "details": "A downstream SaaS connector budget has been exceeded.",
                     "rate_limit_status": result.get("rate_limit_status"),
                     "trace_id": trace_id
                 }

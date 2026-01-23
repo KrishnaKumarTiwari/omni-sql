@@ -20,6 +20,22 @@ The "Engine" of the system, optimized for high-throughput, low-latency execution
 - **Materialization Layer**: Short-lived storage for complex joins and aggregations.
 - **Async Job Runners**: Handles long-running queries that exceed synchronous timeouts.
 
+### 1.3 Join & Execution Strategy
+OmniSQL employs a hybrid execution model:
+- **Federated On-the-Fly**: For simple queries or small result sets from multiple sources, data is streamed directly to the Query Gateway for final assembly.
+- **Short-Lived Materialization**: For complex `JOIN` operations across massive datasets, OmniSQL spills data to a high-speed, short-lived materialization layer (backed by DuckDB or Parquet on S3). This layer is encrypted with tenant-scoped keys and is strictly transient (TTL $\le$ N minutes).
+
+### 1.4 Error Vocabulary
+OmniSQL provides a standardized error model for developer clarity:
+- `RATE_LIMIT_EXHAUSTED`: Source system or tenant budget has been exceeded.
+- `STALE_DATA`: Federated query failed to meet the `max_staleness` constraint.
+- `ENTITLEMENT_DENIED`: User lacks the necessary RLS/CLS permissions for the resource.
+- `SOURCE_TIMEOUT`: A downstream SaaS provider exceeded the service SLO.
+- `PLAN_FAILED`: Query planner could not optimize the federated request.
+
+### 1.5 References
+- **Connector Inspiration**: For a comprehensive list of SaaS categories and field mappings, refer to [Merge.dev Categories](https://merge.dev/categories).
+
 ---
 
 ## 2. Multi-Tenant Isolation & Security
@@ -102,4 +118,7 @@ policies:
 - **IaC**: Terraform for VPC, EKS, Vault, RDS.
 - **CD**: Helm, Canary/Blue-Green with automatic rollback on SLO (latency/error) regression.
 - **Security Protocols**: TLS 1.3 everywhere; mTLS between microservices; per-tenant KMS keys for at-rest encryption.
-- **Compliance**: Audit every cross-system access; Org off-boarding triggers immediate crypto-shredding and job cancellation.
+- **DR/BCP Goals**:
+  - **RPO (Recovery Point Objective)**: < 5 minutes for metadata/cache configuration.
+  - **RTO (Recovery Time Objective)**: < 15 minutes for Data Plane failover to secondary region.
+- **Operational Readiness**: See [OPERATIONS.md](OPERATIONS.md) for detailed Runbooks and deployment strategies.

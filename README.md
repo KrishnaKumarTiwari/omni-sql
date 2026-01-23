@@ -3,9 +3,9 @@
 OmniSQL is a high-performance federated query layer designed to query multiple enterprise SaaS applications at scale. It allows developers and data teams to treat their entire SaaS stack as a single, unified SQL database.
 
 ## 🚀 Quicklinks
-- **High-Level Design**: [docs/DESIGN.md](file:///Users/agentkk/Workspace/aionos/omni-sql/docs/DESIGN.md)
-- **Six-Month Execution Plan**: [docs/EXECUTION_PLAN.md](file:///Users/agentkk/Workspace/aionos/omni-sql/docs/EXECUTION_PLAN.md)
-- **Prototype Documentation**: [prototype/PROTOTYPE.md](file:///Users/agentkk/Workspace/aionos/omni-sql/prototype/PROTOTYPE.md)
+- **High-Level Design**: [docs/DESIGN.md](docs/DESIGN.md)
+- **Six-Month Execution Plan**: [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md)
+- **Prototype Documentation**: [prototype/PROTOTYPE.md](prototype/PROTOTYPE.md)
 
 ---
 

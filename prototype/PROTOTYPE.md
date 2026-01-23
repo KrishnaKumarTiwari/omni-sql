@@ -1,6 +1,6 @@
 # OmniSQL Prototype: Comprehensive Federated Query
 
-This prototype demonstrates a cross-app join between **GitHub** and **Salesforce**, incorporating the core architecture concepts of OmniSQL.
+This prototype demonstrates a cross-app join between **GitHub** and **Jira**, incorporating the core architecture concepts of OmniSQL.
 
 ## 🏗 Prototype Components
 
@@ -19,6 +19,26 @@ This prototype demonstrates a cross-app join between **GitHub** and **Salesforce
 4. **Observability**:
    - **Prometheus**: Tracks `http_requests_total` and `query_latency_ms`.
    - **Tracing**: Traces the full request path including connector call time.
+
+---
+
+## 🏗 Join & Execution Strategy
+
+This prototype demonstrates a **Short-Lived Materialization** strategy:
+- Data is fetched from GitHub and Jira concurrently.
+- Filters are pushed down to the mock connectors (Predicate Pushdown).
+- The resulting filtered datasets are "materialized" into an in-memory **DuckDB** instance.
+- The complex cross-app join is performed within DuckDB, simulating a transient execution environment that is wiped after the query lifecycle.
+
+---
+
+## 📖 Error Vocabulary
+
+The following standardized errors are implemented in this prototype:
+- `RATE_LIMIT_EXHAUSTED`: Returned when the mock connector's token bucket is empty.
+- `STALE_DATA`: (Simulated via logs) when cache constraints are not met.
+- `ENTITLEMENT_DENIED`: Returned as a 403 when OPA-style RLS/CLS rules block access.
+- `SOURCE_TIMEOUT`: (Simulated) when downstream network latency exceeds the gateway timeout.
 
 ---
 
