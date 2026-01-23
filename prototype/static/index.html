@@ -224,9 +224,12 @@
             </div>
             <div class="field">
                 <label>Quick Queries</label>
-                <button onclick="setQuery('join')">Cross-App Join</button>
-                <button onclick="setQuery('github')">GitHub Only</button>
-                <button onclick="setQuery('jira')">Jira Only</button>
+                <button onclick="setQuery('join')">PRs ↔ Issues (Status)</button>
+                <button onclick="setQuery('stuck')">Stuck Velocity (Review Blocked)</button>
+                <button onclick="setQuery('security')">Security Audit (Mismatched Status)</button>
+                <button onclick="setQuery('effort')">Effort Mapping (Points vs LOC)</button>
+                <button onclick="setQuery('github')">All GitHub PRs</button>
+                <button onclick="setQuery('jira')">All Jira Issues</button>
             </div>
         </div>
 
@@ -273,6 +276,9 @@ WHERE jira.status = 'In Progress'</textarea>
         function setQuery(type) {
             const queries = {
                 join: "SELECT gh.pr_id, gh.author, jira.status as jira_status \nFROM github.pull_requests gh \nJOIN jira.issues jira ON gh.branch = jira.branch_name \nWHERE jira.status = 'In Progress'",
+                stuck: "SELECT jira.issue_key, jira.summary, gh.status as pr_status, gh.review_status \nFROM jira.issues jira \nJOIN github.pull_requests gh ON jira.branch_name = gh.branch \nWHERE gh.review_status = 'CHANGES_REQUESTED' AND jira.status != 'Done'",
+                security: "SELECT gh.pr_id, gh.author, gh.merged_at, jira.issue_key, jira.status as jira_status \nFROM github.pull_requests gh \nJOIN jira.issues jira ON gh.branch = jira.branch_name \nWHERE gh.status = 'merged' AND jira.status != 'Done'",
+                effort: "SELECT jira.issue_key, jira.story_points, (gh.additions + gh.deletions) as total_loc, jira.assignee \nFROM jira.issues jira \nJOIN github.pull_requests gh ON jira.branch_name = gh.branch \nORDER BY total_loc DESC",
                 github: "SELECT * FROM github.pull_requests",
                 jira: "SELECT * FROM jira.issues"
             };
