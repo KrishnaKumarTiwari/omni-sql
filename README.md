@@ -42,12 +42,12 @@ OmniSQL is a high-performance federated query layer designed to query multiple e
 ---
 
 ## 🛠 Prototype Scenario
-The current prototype demonstrates a cross-app join between **GitHub** and **Salesforce** to identify key contributors who are also potential high-value sales leads.
+The current prototype demonstrates a cross-app join between **GitHub** and **Jira** to track the status of Pull Requests against their corresponding Jira Issues.
 
 **Sample Query**:
 ```sql
-SELECT gh.username, sf.lead_score, sf.company
-FROM github.contributors gh
-JOIN salesforce.leads sf ON gh.email = sf.email
-WHERE sf.lead_score > 80
+SELECT gh.pr_id, gh.status, jira.issue_key, jira.status as jira_status
+FROM github.pull_requests gh
+JOIN jira.issues jira ON gh.branch = jira.branch_name
+WHERE jira.status = 'In Progress'
 ```

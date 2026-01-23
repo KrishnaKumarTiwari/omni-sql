@@ -1,88 +1,105 @@
-# OmniSQL: High-Level Design
+# OmniSQL: Technical Design Document
 
-## 1. Architecture Overview
-OmniSQL follows a **Control Plane / Data Plane** separation to decouple management logic from high-throughput query execution.
+## 1. Core Architecture Concepts
 
-### System Diagram
-```mermaid
-graph TD
-    User([End User / API Client]) --> Gateway[API Gateway / Auth]
-    
-    subgraph "Control Plane (Regional)"
-        Gateway --> CP[Control Plane Service]
-        CP --> Schema[Schema & Connector Registry]
-        CP --> TenantDB[(Tenant & Policy Metadata)]
-        CP --> KMS[Per-Tenant Key Management]
-    end
+OmniSQL is built as a cloud-native, federated query system with a strict separation of concerns.
 
-    subgraph "Data Plane (Stateless, Auto-scaled)"
-        Gateway --> Planner[Query Planner & Optimizer]
-        Planner --> Executor[Distributed Executor]
-        Executor --> Cache[(Result & Metadata Cache)]
-        
-        subgraph "Connector Layer"
-            Executor --> ConA[Salesforce Connector]
-            Executor --> ConB[Jira Connector]
-            Executor --> ConC[GitHub Connector]
-        end
-    end
+### 1.1 Control Plane
+The "Brain" of the system, responsible for governance and configuration.
+- **Tenant & Connector Registry**: Management of customer accounts and available SaaS integrations.
+- **Schema Catalog**: Centralized metadata about tables, fields, and operations supported by each connector.
+- **Policy Store**: OPA-based definitions for RLS, CLS, and masking rules.
+- **Secrets & Rate-Limit Policies**: Secure storage (Vault) and global/tenant-level budget definitions.
+- **Audit Logging**: Immutable trail of every query and administrative action.
 
-    subgraph "External SaaS Ecosystem"
-        ConA --> SF[Salesforce API]
-        ConB --> JR[Jira API]
-        ConC --> GH[GitHub API]
-    end
+### 1.2 Data Plane
+The "Engine" of the system, optimized for high-throughput, low-latency execution.
+- **Query Gateway**: Entry point for all SQL requests.
+- **Query Planner & Distributed Executor**: Parses SQL and orchestrates parallel data fetching.
+- **Connector Workers**: Specialized sidecars that interface with SaaS APIs.
+- **Materialization Layer**: Short-lived storage for complex joins and aggregations.
+- **Async Job Runners**: Handles long-running queries that exceed synchronous timeouts.
 
-    classDef plane fill:#f9f,stroke:#333,stroke-width:2px;
-    class DataPlane plane;
+---
+
+## 2. Multi-Tenant Isolation & Security
+
+### 2.1 Isolation Strategy
+OmniSQL utilizes **Logical Isolation with Physical Guardrails**:
+- **Namespace per Tenant**: Every tenant runs in a dedicated K8s namespace/logical boundary.
+- **Network Boundaries**: Egress policies ensure no cross-tenant data leakage.
+- **Encryption**: Data at rest (caches/materialization) is encrypted with **tenant-scoped keys** managed via Cloud KMS.
+- **Sharding**: Compute resources are pooled into "Tiers," with an option for **Single-Tenant Clusters** for high-tier customers.
+
+### 2.2 Security & Compliance
+- **TLS & mTLS**: TLS 1.3 enforced everywhere; mTLS for all inter-service communication.
+- **AuthN/AuthZ**: AuthN via OIDC; AuthZ via fine-grained OPA policies.
+- **Data Residency**: Tags on data and jobs ensure compliance with regional residency requirements (GDPR, etc.).
+- **Crypto-Shredding**: Org off-boarding triggers immediate deletion of tenant-scoped KMS keys and job cancellation.
+- **Threat Model**: STRIDE analysis is applied to every component, with automated pentest readiness.
+
+---
+
+## 3. Detailed Component Breakdown
+
+| Component | Responsibility | Key Features |
+| :--- | :--- | :--- |
+| **Query Gateway** | API Entry & Auth | **POST /v1/query**, OIDC/OPA AuthZ, P90 Timeout Management. |
+| **Query Planner** | Optimization | Capability discovery, Predicate/Column Pushdown, Join planning. |
+| **Connector SDK** | SaaS Interface | Standardized error codes, pagination, token refresh, concurrency contracts. |
+| **Entitlements** | RLS/CLS | Merges source permissions with local OPA policies at plan time. |
+| **Rate-Limit Svc** | Governance | Token buckets per User/Tenant/Connector; Async overflow path. |
+| **Freshness Layer** | Caching | TTL-based, Conditional requests (ETag), Incremental snapshots. |
+| **Observability** | Telemetry | **OpenTelemetry Traces**, **Prometheus Metrics**, Exemplar Dashboards. |
+
+---
+
+## 4. SQL & Policy Surface
+
+### 4.1 Interface: `POST /v1/query`
+The primary interface for both multi-tenant and single-tenant modes.
+- **Request Body**:
+  ```json
+  {
+    "sql": "SELECT gh.pr_id FROM github.pull_requests gh JOIN jira.issues jira ON gh.branch = jira.branch_name",
+    "metadata": { "trace_id": "abc-123", "max_staleness_ms": 5000 }
+  }
+  ```
+- **Response Body**:
+  ```json
+  {
+    "rows": [...],
+    "columns": ["pr_id"],
+    "freshness_ms": 124,
+    "rate_limit_status": { "remaining": 95, "reset_ms": 60000 },
+    "trace_id": "abc-123"
+  }
+  ```
+
+### 4.2 Policy Configuration
+OmniSQL uses a centralized `policy.yaml` (translated to OPA) for unified governance:
+```yaml
+policies:
+  - id: "rls_by_team"
+    rule: "SELECT * FROM github.pull_requests WHERE team_id = user.team_id"
+  - id: "mask_contributor_email"
+    rule: "MASK email WITH 'sha256' FOR ALL EXCEPT role:admin"
 ```
 
-## 2. Component Breakdown
-- **Control Plane**: Manages connector registries, tenant metadata, and encryption keys (per-tenant KMS integration).
-- **Data Plane**: A stateless fleet handling SSL, SQL parsing (Query Planner), and parallel execution (Distributed Executor).
-- **Connector Fleet**: Specialized gRPC adapters (Sidecar Model) that translate SQL predicates into SaaS-native filters (JQL, SOQL, etc.).
+---
 
-## 3. Multi-Tenant Isolation
-OmniSQL utilizes **Logical Isolation with Physical Guards**:
-- **At Rest**: Tenant credentials and cache are encrypted with unique per-tenant keys.
-- **In Flight**: Every context is tagged with a `tenant_id`.
-- **Compute**: Workers are pooled but resource-tracked per tenant. High-tier customers can use dedicated worker pools.
+## 5. Capacity & Performance Targets
 
-## 4. Security & Entitlements
-OmniSQL implements a **Least-Privilege** model by default:
-- **Passthrough Authentication**: The system forwards the user's OAuth tokens to SaaS providers, ensuring the query respects their existing permissions.
-- **Entitlement Proxy**: For service-account-based access, OmniSQL applies an OPA (Open Policy Agent) layer that rewrites SQL queries to include RLS (Row-Level Security) and CLS (Column-Level Security) predicates based on tenant policies.
-- **Data Privacy**: PII is masked or redacted by default unless the querying user has explicit `PII_ACCESS` roles.
-- **Encryption**: All credentials and sensitive metadata are stored in a dedicated KMS-backed vault, with per-tenant encryption keys derived from a master HSM.
+### 5.1 Sizing & Scaling (1k QPS)
+- **Concurrency**: 500 concurrent workers for 1k QPS with 500ms P50 latency.
+- **Observability**: Prometheus metrics for `query_latency_seconds` and `connector_errors_total`. Traces covering the full lifecycle (Gateway -> Planner -> Connector).
+- **Chaos Plan**: Automated failure injection for connectors; circuit breakers (Hystrix/Resilience4j style) to prevent cascading failures.
 
-## 5. Governance: Rate Limits & Freshness
-- **Rate-Limit Fairness**:
-  - **Connector-Level**: Global limits imposed by the SaaS provider (e.g., 100 req/sec for Salesforce).
-  - **Tenant-Level**: Prevents a single tenant from exhausting the global connector budget.
-  - **User-Level**: Prevents a single user from "slamming" the API with complex joins.
-- **Freshness Model**:
-  - **On-Demand (Default)**: Always queries the source.
-  - **Adaptive Caching**: Result sets are cached with a TTL defined by the connector's "materiality" policy (e.g., GitHub issues cache for 5s, Salesforce Leads for 1min).
-  - **Staleness Hints**: Users can pass `--staleness 5m` in SQL to allow queries against a stale cache, reducing latency and rate-limit consumption.
+---
 
-## 6. Cost Control
-- **Query Credits**: Tenants are assigned query credits. Heavier queries (e.g., cross-app joins) consume more credits based on compute and API calls.
-- **Guardrails**: Automated query cancellation for queries projected to exceed resource limits (e.g., joining two 1M+ row tables without appropriate filters).
+## 6. Deployment & Operations
 
-## 7. Deployment Modes
-### Multi-tenant SaaS
-- Shared compute and storage in a managed environment.
-- Automated sharding and failover across multiple availability zones.
-
-### Single-tenant / BYOC
-- **Data Plane in Customer VPC**: The query executor and connectors run in the customer's Kubernetes cluster (AWS EKS, GCP GKE).
-- **Managed Control Plane**: Policy management, schema registry, and audit logging remain in the provider's cloud for central governance.
-- **Zero-Data Leakage**: Customer data never leaves their VPC; only metadata and control signals are exchanged with the Control Plane.
-
-## 8. Scalability Targets
-- **Peak QPS**: 1,000 queries per second.
-- **Concurrent Users**: 10,000 active sessions.
-- **Data Throughput**: 100 MB/s aggregate.
-- **Latency SLO**:
-  - **P50**: < 500ms (Single source, predicate pushdown).
-  - **P95**: < 1.5s (Complex joins, cold cache).
+- **IaC**: Terraform for VPC, EKS, Vault, RDS.
+- **CD**: Helm, Canary/Blue-Green with automatic rollback on SLO (latency/error) regression.
+- **Security Protocols**: TLS 1.3 everywhere; mTLS between microservices; per-tenant KMS keys for at-rest encryption.
+- **Compliance**: Audit every cross-system access; Org off-boarding triggers immediate crypto-shredding and job cancellation.

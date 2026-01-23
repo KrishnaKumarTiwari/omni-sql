@@ -1,29 +1,30 @@
 # OmniSQL: Six-Month Execution Plan
 
-## 1. Team Shape (10 FTEs)
-- **Core Engine (4)**: SQL parsing, query planning, distributed execution, and multi-tenancy logic.
-- **Connector Hub (3)**: SDK development, connector versioning, and Tier-1/Tier-2 SaaS integrations.
-- **Platform & SRE (2)**: Kubernetes orchestration, BYOC automation, KMS orchestration, and observability (telemetry/tracing).
-- **Product & QA (1)**: Requirement validation, SaaS sandbox management, and automated end-to-end testing.
+## 1. Team Shape (12 FTEs)
+- **Core Engine (4)**: SQL parsing, Query Planning, Distributed Execution, and Materialization (DuckDB).
+- **Security & Policy (2)**: OPA integration, Entitlement service, Vault management, and KMS orchestration.
+- **Connector Ecosystem (4)**: SDK development, connector versioning, and SaaS API integration.
+- **Platform & SRE (2)**: K8s Isolation (Namespaces/Egress), Terraform, and Observability (Otel).
 
 ## 2. Milestones
 | Timeline | Stage | Goals | Measurable Acceptance Criteria |
 | :--- | :--- | :--- | :--- |
-| **M 1-2** | Foundational | Stateless engine + core connectors (GH, SF, Slack). | P50 < 500ms; Single-tenant deployment automation ready. |
-| **M 3** | Governance | Rate limiting (Token Bucket) + Unified Auth. | Zero-leakage multi-tenancy; 100% audit coverage for queries. |
-| **M 4** | Advanced SQL | Cross-app joins + Predicate pushdown optimization. | Support joins across 3+ sources with P95 < 2s. |
-| **M 5** | Enterprise | RLS/CLS via OPA + BYOC (Data Plane) launch. | Customer-verified VPC deployment; SOC2/HIPAA compliance signals. |
-| **M 6** | Scale | 1000s of connectors (SDK Beta) + Global Edge sharding. | Support 1k QPS aggregate; P99 < 5s for complex federated queries. |
+| **M 1-2** | Foundational | Multi-tenant Data Plane + Core Connectors. | K8s namespace isolation; P50 < 500ms for pushdown. |
+| **M 3** | Governance | OPA Entitlements + Rate Limiting. | RLS/CLS enforced via Rego; 100% audit coverage. |
+| **M 4** | Advanced SQL | Cross-app joins + Materialization (DuckDB). | Support complex joins with spilled materialization. |
+| **M 5** | Enterprise | BYOC Data Plane + Vault/KMS (Tenant Keys). | Proof of Org off-boarding (crypto-shredding) verified. |
+| **M 6** | Scale | Global Edge Sharding + 1k QPS aggregate. | P95 < 1.5s for single-source; P99 < 5s for joins. |
 
 ## 3. Risk Register
 | Risk | Impact | Mitigation Strategy |
 | :--- | :--- | :--- |
-| **SaaS Rate Limits** | High | Aggressive caching + staleness hints + global fairness scheduling. |
-| **API Schema Evolution** | Medium | Connector versioning + daily automated "sandbox" smoke tests. |
-| **Join Data Volume** | High | Predicate pushdown + broadcast hash joins for small tables. |
-| **Data Sovereignty** | Medium | Regional sharding + BYOC Data Plane to keep data resident. |
+| **SaaS Rate Limits** | High | Token bucket fairness + async query overflow mode. |
+| **Data Leakage** | Critical | Strict K8s egress policies + Tenant-scoped KMS keys. |
+| **SQL Performance** | Medium | Predicate pushdown + materialization lifecycle management. |
+| **API Drift** | Medium | Daily automated sandbox integration tests. |
 
 ## 4. Resource & Budget Assumptions
-- **Infrastructure**: ~$8k-$12k/mo (AWS/GCP) for staging/prod environments.
-- **Tools**: Datadog (monitoring), Snyk (security), OPA (policy engine).
-- **Headcount**: High-seniority engineering team (average $180k-$220k OTE).
+- **Infrastructure**: ~$12k-$15k/mo (AWS/GCP) for multi-region staging/prod.
+- **Tools**: Datadog, Snyk, HashiCorp Vault, Open Policy Agent (OPA).
+- **Headcount**: Senior engineering team (Avg $200k OTE).
+- **Operations**: 24/7 on-call rotation for Tier-1 connectors.

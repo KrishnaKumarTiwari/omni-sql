@@ -1,72 +1,56 @@
-# OmniSQL Prototype: Cross-App Query Scenario
+# OmniSQL Prototype: Comprehensive Federated Query
 
-This document outlines the scope, technical details, and verification steps for the OmniSQL functional prototype.
-
-## 🎯 Scenario: Relationship Intelligence
-**Goal**: Identify high-impact open-source contributors who are also potential sales leads in the CRM.
-
-### The Federated Query
-```sql
-SELECT 
-    gh.username, 
-    gh.stars, 
-    sf.lead_name, 
-    sf.company, 
-    sf.lead_score
-FROM github.users gh
-JOIN salesforce.leads sf ON gh.email = sf.email
-WHERE gh.stars > 100 
-  AND sf.lead_score > 50
-ORDER BY sf.lead_score DESC;
-```
+This prototype demonstrates a cross-app join between **GitHub** and **Salesforce**, incorporating the core architecture concepts of OmniSQL.
 
 ## 🏗 Prototype Components
 
-### 1. Mock SaaS Connectors
-- **GitHub Connector**: 
-  - Simulates the `/users` and `/repos` endpoints.
-  - Implements **Predicate Pushdown** for `stars > 100`.
-  - Rate limit: 10 requests per minute (simulated).
-- **Salesforce Connector**: 
-  - Simulates the `Leads` object.
-  - Implements **Predicate Pushdown** for `lead_score > 50`.
-  - Rate limit: 5 requests per minute (simulated).
+1. **Query Gateway**:
+   - **Interface**: `POST /v1/query` (Accepts SQL, returns JSON results + metadata).
+   - **AuthN/AuthZ**: Simulates OIDC token validation and OPA entitlement checks.
 
-### 2. Query Engine (Powered by DuckDB)
-- **Federation Logic**: Orchestrates data fetching from connectors.
-- **Join Execution**: Performs an in-memory hash join between the filtered datasets.
-- **Entitlements Middleware**: 
-  - Checks if the user has `READ_GITHUB` and `READ_SALESFORCE` permissions.
-  - Implements Row-Level Security (RLS) to filter out sensitive leads (e.g., competitors).
+2. **Policy Configuration**:
+   - **RLS**: Filters PRs based on the user's `team_id`.
+   - **CLS**: Masks the `author_email` field for users without the `PII_ACCESS` scope.
 
-### 3. Governance Layer
-- **Token Bucket Rate Limiter**: Tracks usage per-tenant and per-connector.
-- **Freshness Control**: 
-  - `gh.users` cache TTL: 30 seconds.
-  - `sf.leads` cache TTL: 60 seconds.
-  - Users can bypass cache using `--bypass-cache` flag.
+3. **Governance**:
+   - **Rate Limiting**: Token Bucket with burst support (50 tokens, 10/sec refill).
+   - **Freshness**: `max_staleness_ms` parameter to toggle between cache and live fetch.
 
-## 🚀 How to Run the Prototype
+4. **Observability**:
+   - **Prometheus**: Tracks `http_requests_total` and `query_latency_ms`.
+   - **Tracing**: Traces the full request path including connector call time.
 
-### Prerequisites
+---
+
+## 🚀 How to Run & Verify
+
+### 1. Prerequisites
 - Python 3.9+
-- `pip install duckdb pandas`
+- `pip install uvicorn fastapi duckdb prometheus_client opentelemetry-api`
+- `k6` (for load testing)
 
-### Execution
+### 2. Execution
 ```bash
-# Run the end-to-end query
-python prototype/main.py --query "SELECT ..."
+# Start the Prototype API
+python prototype/main.py
 
-# Test rate limiting (run multiple times)
-python prototype/main.py --query "..."
-
-# Test entitlements (using a restricted user)
-python prototype/main.py --user restricted_user --query "..."
+# Run a sample query
+curl -X POST http://localhost:8000/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"sql": "SELECT gh.pr_id, jira.status FROM github.pull_requests gh JOIN jira.issues jira ON gh.branch = jira.branch_name WHERE jira.status = \"In Progress\""}'
 ```
 
+### 3. Load Testing (k6)
+```bash
+# Target: 500-1k QPS for 60s
+k6 run prototype/tests/load_test.js
+```
+
+---
+
 ## 🧪 Verification Criteria
-1. **Security**: Query fails if the user lacks permissions for one of the joined sources.
-2. **Entitlements**: `restricted_user` should not see leads from `company = 'Competitor'`.
-3. **Rate Limits**: The 3rd consecutive query within 10 seconds should return a `429 Too Many Requests` simulated error.
-4. **Performance**: Federated execution (fetch + join) should complete in < 500ms (ignoring simulated network delays).
-5. **Freshness**: Subsequent queries within the TTL should return cached results (indicated in logs).
+1. **Security**: Role `qa` cannot see `gh.diff_link` (CLS masking).
+2. **Entitlements**: `Team: Mobile` only sees PRs with `team_id = 'mobile'`.
+3. **Rate Limits**: 429 response after 50 rapid requests, with `Retry-After` header.
+4. **Performance**: Log shows `trace_id` and connector fetch time (aiming for P50 < 500ms).
+5. **Freshness**: Response field `freshness_ms` indicates if data was served from cache (< 100ms) or live.
