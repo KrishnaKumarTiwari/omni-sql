@@ -49,13 +49,40 @@ OmniSQL utilizes **Logical Isolation with Physical Guards**:
 - **Compute**: Workers are pooled but resource-tracked per tenant. High-tier customers can use dedicated worker pools.
 
 ## 4. Security & Entitlements
-- **Passthrough**: Uses the user's OAuth context to respect source system ACLs.
-- **Synthetic Policies**: OPA-based query rewriting for service-account access (RLS/CLS).
+OmniSQL implements a **Least-Privilege** model by default:
+- **Passthrough Authentication**: The system forwards the user's OAuth tokens to SaaS providers, ensuring the query respects their existing permissions.
+- **Entitlement Proxy**: For service-account-based access, OmniSQL applies an OPA (Open Policy Agent) layer that rewrites SQL queries to include RLS (Row-Level Security) and CLS (Column-Level Security) predicates based on tenant policies.
+- **Data Privacy**: PII is masked or redacted by default unless the querying user has explicit `PII_ACCESS` roles.
+- **Encryption**: All credentials and sensitive metadata are stored in a dedicated KMS-backed vault, with per-tenant encryption keys derived from a master HSM.
 
 ## 5. Governance: Rate Limits & Freshness
-- **Hierarchical Rate Limiting**: Distributed Token Buckets at Global, Tenant, and User levels.
-- **Freshness Model**: Tiered caching (RAM, Redis) with TTLs and smart invalidation via webhooks.
+- **Rate-Limit Fairness**:
+  - **Connector-Level**: Global limits imposed by the SaaS provider (e.g., 100 req/sec for Salesforce).
+  - **Tenant-Level**: Prevents a single tenant from exhausting the global connector budget.
+  - **User-Level**: Prevents a single user from "slamming" the API with complex joins.
+- **Freshness Model**:
+  - **On-Demand (Default)**: Always queries the source.
+  - **Adaptive Caching**: Result sets are cached with a TTL defined by the connector's "materiality" policy (e.g., GitHub issues cache for 5s, Salesforce Leads for 1min).
+  - **Staleness Hints**: Users can pass `--staleness 5m` in SQL to allow queries against a stale cache, reducing latency and rate-limit consumption.
 
-## 6. Deployment Modes
-- **Multi-tenant SaaS**: Managed high-scale shared infrastructure.
-- **BYOC (Bring Your Own Cloud)**: Data plane runs in the customer's VPC; control plane remains managed.
+## 6. Cost Control
+- **Query Credits**: Tenants are assigned query credits. Heavier queries (e.g., cross-app joins) consume more credits based on compute and API calls.
+- **Guardrails**: Automated query cancellation for queries projected to exceed resource limits (e.g., joining two 1M+ row tables without appropriate filters).
+
+## 7. Deployment Modes
+### Multi-tenant SaaS
+- Shared compute and storage in a managed environment.
+- Automated sharding and failover across multiple availability zones.
+
+### Single-tenant / BYOC
+- **Data Plane in Customer VPC**: The query executor and connectors run in the customer's Kubernetes cluster (AWS EKS, GCP GKE).
+- **Managed Control Plane**: Policy management, schema registry, and audit logging remain in the provider's cloud for central governance.
+- **Zero-Data Leakage**: Customer data never leaves their VPC; only metadata and control signals are exchanged with the Control Plane.
+
+## 8. Scalability Targets
+- **Peak QPS**: 1,000 queries per second.
+- **Concurrent Users**: 10,000 active sessions.
+- **Data Throughput**: 100 MB/s aggregate.
+- **Latency SLO**:
+  - **P50**: < 500ms (Single source, predicate pushdown).
+  - **P95**: < 1.5s (Complex joins, cold cache).
