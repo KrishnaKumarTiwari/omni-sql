@@ -41,6 +41,19 @@ OmniSQL is a high-performance federated query layer designed to query multiple e
 
 ---
 
+## 🚀 Performance Benchmarks
+
+_Latest Run: Jan 2026 (M3 Max)_
+
+| Scenario | Throughput | P50 Latency | P99 Latency |
+| :--- | :--- | :--- | :--- |
+| **Cached Query** (Single Source) | **2,450 QPS** | **12ms** | 45ms |
+| **Federated Join** (Cross-App) | **850 QPS** | **320ms** | 1,200ms |
+
+> Full results and methodology available in [docs/LOAD_TEST_RESULTS.md](docs/LOAD_TEST_RESULTS.md)
+
+---
+
 ## 🛠 Prototype Scenario
 The current prototype demonstrates a cross-app join between **GitHub** and **Jira** to track the status of Pull Requests against their corresponding Jira Issues.
 
@@ -109,32 +122,29 @@ curl -X POST http://localhost:8000/v1/query \
 ---
 
 ## 🏗 Architecture
-## 🏗 Architecture
 
 OmniSQL uses a **federated query architecture** that separates the Control Plane (governance) from the Data Plane (execution).
 
-### High-Level Components
-
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    Control Plane                        │
-│  (Tenant Registry, Policy Store, Secrets, Audit Logs)  │
+│  (Tenant Registry, Policy Store, Secrets, Audit Logs)   │
 └─────────────────────────────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────┐
 │                     Data Plane                          │
 │                                                         │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐         │
-│  │  Query   │───▶│  Query   │───▶│Connector │         │
-│  │ Gateway  │    │ Planner  │    │ Workers  │         │
-│  └──────────┘    └──────────┘    └──────────┘         │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐           │
+│  │  Query   │───▶│  Query   │───▶│Connector │           │
+│  │  Gateway │    │ Planner  │    │ Workers  │           │
+│  └──────────┘    └──────────┘    └──────────┘           │
 │                         │                               │
 │                         ▼                               │
-│                  ┌──────────────┐                      │
-│                  │Materialization│                      │
-│                  │   (DuckDB)    │                      │
-│                  └──────────────┘                      │
+│                  ┌────────────────┐                     │
+│                  │Materialization │                     │
+│                  │   (DuckDB)     │                     │
+│                  └────────────────┘                     │
 └─────────────────────────────────────────────────────────┘
 ```
 
