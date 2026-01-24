@@ -155,6 +155,34 @@ OmniSQL uses a **federated query architecture** that separates the Control Plane
 
 ---
 
+## 📸 Screenshots
+
+### OmniSQL Web Console
+
+The OmniSQL Console provides an intuitive interface for executing federated queries across your enterprise SaaS applications.
+
+#### Query Interface
+![OmniSQL Console - Query Interface](images/q1.png)
+*Clean, Ema.co-themed interface with quick query templates and SQL editor*
+
+#### PR to Issues Mapping (Federated Join)
+![Cross-App Join Query Results](images/q2.png)
+*Real-time join between GitHub PRs and Jira issues showing branch correlation*
+
+#### Advanced Filtering with Aggregations
+![Query with Aggregations](images/q3.png)
+*Complex queries with summary statistics and cross-app filtering*
+
+#### Security Audit Query
+![Security Audit Results](images/q4.png)
+*Finding merged PRs with unresolved Jira tickets for compliance tracking*
+
+#### Effort Analysis (Story Points vs LOC)
+![Effort Mapping Query](images/q5.png)
+*Correlating Jira story points with actual code changes from GitHub*
+
+---
+
 ## 🧪 Testing
 
 ### Functional Tests
