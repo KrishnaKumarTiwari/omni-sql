@@ -73,6 +73,50 @@ To manage the economics of federated queries at scale, OmniSQL implements multi-
 
 ## 3. Detailed Component Breakdown
 
+### 3.1 Architecture Diagram
+
+```mermaid
+graph TD
+    User[User / Client] -->|HTTPS/SQL| Gateway[Query Gateway]
+    
+    subgraph Control_Plane [Control Plane]
+        Auth[Auth Service]
+        Policy[Policy Store OPA]
+        Catalog[Metadata Catalog]
+        Vault[Secrets Vault]
+    end
+    
+    subgraph Data_Plane [Data Plane]
+        Planner[Query Planner]
+        DuckDB[(Materialization Layer \n DuckDB)]
+        
+        subgraph Connectors [Connector Workers]
+            GH[GitHub Connector]
+            Jira[Jira Connector]
+            Linear[Linear Connector]
+        end
+    end
+    
+    Gateway -->|Verify Token| Auth
+    Gateway -->|Check Rules| Policy
+    Gateway -->|Plan Query| Planner
+    
+    Planner -->|Get Schema| Catalog
+    Planner -->|Get Creds| Vault
+    Planner -->|Pushdown Query| Connectors
+    
+    Connectors -->|Fetch Data| GH
+    Connectors -->|Fetch Data| Jira
+    Connectors -->|Fetch Data| Linear
+    
+    Connectors -->|Stream Results| DuckDB
+    DuckDB -->|Final Join| Gateway
+    Gateway -->|Result JSON| User
+```
+
+### 3.2 Component Roles
+
+
 | Component | Responsibility | Key Features |
 | :--- | :--- | :--- |
 | **Query Gateway** | Face of the System | AuthN (OIDC), AuthZ (Policy), request shaping, timeouts. Returns results + metadata (`freshness_ms`, `rate_limit_status`, `trace_id`). |
@@ -85,6 +129,40 @@ To manage the economics of federated queries at scale, OmniSQL implements multi-
 | **Metadata Catalog** | Persistence | Postgres-backed store for schemas, policies, and tenant configurations; migrations via Flyway/Liquibase. |
 | **Secrets & Keys** | Security Core | HashiCorp Vault + Cloud KMS (tenant-scoped keys); automated rotation and break-glass protocols. |
 | **Observability** | Telemetry | OpenTelemetry traces, Prometheus metrics, structured logging; exemplar-linked dashboards and proactive alerts. |
+
+### 3.3 Query Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Gateway
+    participant Planner
+    participant Cache
+    participant Connector
+    participant SaaS
+    
+    User->>Gateway: POST /v1/query (SQL)
+    Gateway->>Gateway: Parse SQL & Authenticate
+    Gateway->>Planner: Create Execution Plan
+    
+    par Fetch Data Parallel
+        Planner->>Cache: Check Freshness (TTL)
+        alt Cache Hit
+            Cache-->>Planner: Return Cached Data
+        else Cache Miss
+            Planner->>Connector: Fetch(Filters)
+            Connector->>SaaS: Https Request (Pushdown)
+            SaaS-->>Connector: JSON Response
+            Connector-->>Cache: Store Data
+            Connector-->>Planner: Return Live Data
+        end
+    end
+    
+    Planner->>Planner: Apply RLS/CLS (Security)
+    Planner->>Planner: Materialize & Join (DuckDB)
+    Planner-->>Gateway: Final Result Set
+    Gateway-->>User: JSON Response + Metadata
+```
 
 ---
 
@@ -124,6 +202,44 @@ actions:
     rule: "hash_hmac(val, 'secret_salt')"
   - column: "internal_notes"
     rule: "BLOCK" # Entirely removes the column from the result
+
+#### Time-Based Access
+Used to restrict access sensitive data to working hours.
+```yaml
+name: "working_hours_only"
+target: "jira.issues"
+type: "RLS"
+rule: "now().hour >= 9 && now().hour <= 17"
+```
+
+#### Hierarchical Access
+Managers can see all data for their department, while individual contributors only see their own team's data.
+```yaml
+name: "manager_hierarchy"
+target: "github.pull_requests"
+type: "RLS"
+rule: "user.role == 'manager' ? team_id IN user.managed_teams : team_id == user.team_id"
+```
+
+#### Data Classification (CONFIDENTIAL)
+Redact fields marked as CONFIDENTIAL for users without specific clearance.
+```yaml
+name: "confidential_data_redaction"
+target: "linear.issues"
+type: "CLS"
+actions:
+  - column: "financial_impact"
+    rule: "user.clearance_level >= 'L3' ? val : 'REDACTED'"
+```
+
+#### Audit Trail Policy
+Enforce that every query touching specific tables logs a reason code.
+```yaml
+name: "audit_requirement"
+target: "all"
+type: "AUDIT"
+rule: "table == 'salaries' => require_metadata('audit_reason')"
+```
 ```
 
 ### 4.3 Policy Compilation & Query Planning

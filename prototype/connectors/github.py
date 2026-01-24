@@ -42,4 +42,18 @@ class GitHubConnector(BaseConnector):
             
             data.append(record)
         
-        return data
+        return [
+            record for record in data
+            if self._apply_filters(record, query_context.get("filters", {}))
+        ]
+
+    def _apply_filters(self, record: Dict[str, Any], filters: Dict[str, Any]) -> bool:
+        """Apply simple equality filters."""
+        if not filters:
+            return True
+            
+        for key, value in filters.items():
+            # Handle mapped fields if necessary, for now direct match
+            if key in record and str(record[key]) != str(value):
+                return False
+        return True

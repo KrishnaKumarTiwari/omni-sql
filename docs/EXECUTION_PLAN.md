@@ -10,6 +10,32 @@
 | Timeline | Stage | Goals | Measurable Acceptance Criteria |
 | :--- | :--- | :--- | :--- |
 | **M 1-2** | Foundational | Multi-tenant Data Plane + Core Connectors. | K8s namespace isolation; P50 < 500ms for pushdown. |
+
+### 2.1 Granular Sprints (Months 1-2)
+
+**Sprint 1 (Wk 1-2): Core Engine Skeleton**
+- [x] Initial Query Gateway (FastAPI) setup
+- [x] DuckDB materialization integration
+- [ ] Basic SQL parser with filter extraction
+- [ ] **Release**: v0.1.0 Internal Alpha
+
+**Sprint 2 (Wk 3-4): Connector Protocol & SDK**
+- [ ] Define standardized Connect/Fetch/Disconnect interface
+- [ ] Implement GitHub & Jira Connectors (v1)
+- [ ] Add rate limiter sidecar pattern
+- [ ] **Release**: v0.2.0 Connector SDK
+
+**Sprint 3 (Wk 5-6): Security Layer MVP**
+- [ ] OPA integration for Policy Decisions
+- [ ] Implement RLS (Team-based) filtering
+- [ ] Implement CLS (Masking) logic
+- [ ] **Release**: v0.3.0 Secure Engine
+
+**Sprint 4 (Wk 7-8): Caching & Performance**
+- [ ] Implement TTL-based Metadata Cache
+- [ ] Add "Tidal" caching strategy for different tiers
+- [ ] Load testing & benchmarks baseline
+- [ ] **Release**: v0.4.0 Foundation Complete
 | **M 3** | Governance | OPA Entitlements + Rate Limiting. | RLS/CLS enforced via Rego; 100% audit coverage. |
 | **M 4** | Advanced SQL | Cross-app joins + Materialization (DuckDB). | Support complex joins with spilled materialization. |
 | **M 5** | Enterprise | BYOC Data Plane + Vault/KMS (Tenant Keys). | Proof of Org off-boarding (crypto-shredding) verified. |

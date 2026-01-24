@@ -46,7 +46,7 @@ async def execute_query(request: QueryRequest, x_user_token: str = Header(None))
     # 2. Execute with Latency tracking
     start_time = time.time()
     try:
-        result = engine.execute_query(user_context, max_staleness_ms)
+        result = engine.execute_query(user_context, max_staleness_ms, request.sql)
         
         # Guard for rate limits from connectors
         if "error" in result and result.get("status_code") == 429:
