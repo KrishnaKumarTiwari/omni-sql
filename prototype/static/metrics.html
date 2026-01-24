@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniSQL Metrics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #F7F6F2;
+            --surface: #FFFFFF;
+            --border: #E3E2E0;
+            --primary: #1F8844;
+            --text: #1F2430;
+            --text-dim: #6B7280;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 2rem;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+        }
+
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background: #166534;
+            transform: translateY(-1px);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .metric-card h3 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.75rem;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: var(--text-dim);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .status-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+
+        .status-warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+
+        .raw-metrics {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .raw-metrics h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        pre {
+            background: #F9FAFB;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: var(--text);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-dim);
+        }
+
+        .timestamp {
+            color: var(--text-dim);
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 OmniSQL Metrics Dashboard</h1>
+            <p class="subtitle">Real-time monitoring of federated query performance</p>
+        </header>
+
+        <button class="refresh-btn" onclick="loadMetrics()">🔄 Refresh Metrics</button>
+
+        <div class="metrics-grid" id="metricsGrid">
+            <div class="loading">Loading metrics...</div>
+        </div>
+
+        <div class="raw-metrics">
+            <h2>Raw Prometheus Metrics</h2>
+            <pre id="rawMetrics">Loading...</pre>
+        </div>
+
+        <div class="timestamp" id="timestamp"></div>
+    </div>
+
+    <script>
+        async function loadMetrics() {
+            try {
+                const response = await fetch('/metrics');
+                const text = await response.text();
+
+                // Display raw metrics
+                document.getElementById('rawMetrics').textContent = text;
+
+                // Parse metrics
+                const metrics = parsePrometheusMetrics(text);
+                displayMetrics(metrics);
+
+                // Update timestamp
+                document.getElementById('timestamp').textContent =
+                    `Last updated: ${new Date().toLocaleString()}`;
+            } catch (error) {
+                console.error('Error loading metrics:', error);
+                document.getElementById('metricsGrid').innerHTML =
+                    '<div class="loading">Error loading metrics. Please try again.</div>';
+            }
+        }
+
+        function parsePrometheusMetrics(text) {
+            const lines = text.split('\n');
+            const metrics = {
+                totalQueries: 0,
+                successQueries: 0,
+                errorQueries: 0,
+                rateLimitedQueries: 0,
+                avgLatency: 0,
+                p50Latency: 0,
+                p95Latency: 0,
+                p99Latency: 0
+            };
+
+            lines.forEach(line => {
+                if (line.startsWith('omnisql_queries_total{status="200"}')) {
+                    metrics.successQueries = parseFloat(line.split(' ')[1]) || 0;
+                } else if (line.startsWith('omnisql_queries_total{status="429"}')) {
+                    metrics.rateLimitedQueries = parseFloat(line.split(' ')[1]) || 0;
+                } else if (line.startsWith('omnisql_queries_total{status="500"}')) {
+                    metrics.errorQueries = parseFloat(line.split(' ')[1]) || 0;
+                } else if (line.includes('omnisql_query_latency_seconds_sum')) {
+                    const sum = parseFloat(line.split(' ')[1]) || 0;
+                    const count = metrics.successQueries + metrics.errorQueries + metrics.rateLimitedQueries;
+                    metrics.avgLatency = count > 0 ? (sum / count * 1000).toFixed(2) : 0;
+                } else if (line.includes('quantile="0.5"')) {
+                    metrics.p50Latency = (parseFloat(line.split(' ')[1]) * 1000).toFixed(2) || 0;
+                } else if (line.includes('quantile="0.95"')) {
+                    metrics.p95Latency = (parseFloat(line.split(' ')[1]) * 1000).toFixed(2) || 0;
+                } else if (line.includes('quantile="0.99"')) {
+                    metrics.p99Latency = (parseFloat(line.split(' ')[1]) * 1000).toFixed(2) || 0;
+                }
+            });
+
+            metrics.totalQueries = metrics.successQueries + metrics.errorQueries + metrics.rateLimitedQueries;
+
+            return metrics;
+        }
+
+        function displayMetrics(metrics) {
+            const successRate = metrics.totalQueries > 0
+                ? ((metrics.successQueries / metrics.totalQueries) * 100).toFixed(1)
+                : 0;
+
+            const grid = document.getElementById('metricsGrid');
+            grid.innerHTML = `
+                <div class="metric-card">
+                    <h3>Total Queries</h3>
+                    <div class="metric-value">${metrics.totalQueries}</div>
+                    <div class="metric-label">
+                        <span class="status-badge status-success">${metrics.successQueries} Success</span>
+                        <span class="status-badge status-error">${metrics.errorQueries} Error</span>
+                        <span class="status-badge status-warning">${metrics.rateLimitedQueries} Rate Limited</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>Success Rate</h3>
+                    <div class="metric-value">${successRate}%</div>
+                    <div class="metric-label">${metrics.successQueries} successful out of ${metrics.totalQueries}</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>Average Latency</h3>
+                    <div class="metric-value">${metrics.avgLatency}<span style="font-size: 1.5rem;">ms</span></div>
+                    <div class="metric-label">Mean query execution time</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>P50 Latency</h3>
+                    <div class="metric-value">${metrics.p50Latency}<span style="font-size: 1.5rem;">ms</span></div>
+                    <div class="metric-label">50th percentile</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>P95 Latency</h3>
+                    <div class="metric-value">${metrics.p95Latency}<span style="font-size: 1.5rem;">ms</span></div>
+                    <div class="metric-label">95th percentile</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>P99 Latency</h3>
+                    <div class="metric-value">${metrics.p99Latency}<span style="font-size: 1.5rem;">ms</span></div>
+                    <div class="metric-label">99th percentile</div>
+                </div>
+            `;
+        }
+
+        // Auto-refresh every 5 seconds
+        loadMetrics();
+        setInterval(loadMetrics, 5000);
+    </script>
+</body>
+
+</html>

@@ -28,6 +28,10 @@ async def get_console():
 async def metrics():
     return JSONResponse(content=generate_latest().decode(), media_type=CONTENT_TYPE_LATEST)
 
+@app.get("/metrics/dashboard")
+async def metrics_dashboard():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "metrics.html"))
+
 @app.post("/v1/query")
 async def execute_query(request: QueryRequest, x_user_token: str = Header(None)):
     trace_id = request.metadata.get("trace_id", str(uuid.uuid4()))
