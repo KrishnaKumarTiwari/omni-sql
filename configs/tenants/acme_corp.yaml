@@ -1,0 +1,67 @@
+tenant_id: acme_corp
+display_name: "Acme Corporation"
+api_budget: 2000
+opa_policy_namespace: "acme"
+
+connector_configs:
+  github:
+    connector_id: github
+    base_url: "https://api.github.com"
+    transport: graphql
+    graphql_path: "/graphql"
+    auth_type: bearer
+    credential_ref: "env://ACME_GITHUB_TOKEN"
+    rate_limit_capacity: 100
+    rate_limit_refill_rate: 15.0
+    freshness_ttl_ms: 30000
+    pushable_filters: ["status", "team_id", "author"]
+
+  jira:
+    connector_id: jira
+    base_url: "https://acme.atlassian.net"
+    transport: rest
+    auth_type: basic
+    credential_ref: "env://ACME_JIRA_TOKEN"
+    rate_limit_capacity: 50
+    rate_limit_refill_rate: 5.0
+    freshness_ttl_ms: 60000
+    pushable_filters: ["status", "project", "priority"]
+
+  linear:
+    connector_id: linear
+    base_url: "https://api.linear.app"
+    transport: graphql
+    graphql_path: "/graphql"
+    auth_type: bearer
+    credential_ref: "env://ACME_LINEAR_TOKEN"
+    rate_limit_capacity: 60
+    rate_limit_refill_rate: 10.0
+    freshness_ttl_ms: 45000
+    pushable_filters: ["status"]
+
+rls_rules:
+  - connector_id: github
+    rule_expr: "team_id == user.team_id"
+  - connector_id: jira
+    rule_expr: "project.lower() == user.team_id"
+
+cls_rules:
+  - connector_id: github
+    column: author_email
+    action: hash_hmac
+    condition: "user.pii_access == false"
+  - connector_id: github
+    column: author
+    action: block
+    condition: 'user.role == "qa"'
+
+table_registry:
+  "github.pull_requests":
+    connector: github
+    fetch_key: all_prs
+  "jira.issues":
+    connector: jira
+    fetch_key: all_issues
+  "linear.issues":
+    connector: linear
+    fetch_key: all_issues

@@ -44,3 +44,11 @@ Thumbs.db
 .cache/
 .pytest_cache/
 *.log
+
+# Secrets & credentials — NEVER commit these
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.yaml

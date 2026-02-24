@@ -1,14 +1,77 @@
 version: '3.8'
 
 services:
+  # ---------------------------------------------------------------------------
+  # OmniSQL Production Gateway (port 8002 to avoid clash with prototype :8001)
+  # ---------------------------------------------------------------------------
   omnisql:
     build: .
     ports:
-      - "8000:8000"
+      - "8002:8002"
     environment:
       - PYTHONPATH=/app
+      - REDIS_URL=redis://redis:6379/0
+      - TENANT_CONFIG_DIR=/app/configs/tenants
+      - OPA_URL=                        # empty = inline fallback (no OPA needed)
+      - JWKS_URL=                       # empty = dev mode (prototype token map)
+      - JWT_AUDIENCE=omnisql-dev
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/metrics" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    volumes:
+      - ./configs:/app/configs:ro       # mount tenant YAML configs
+      - ./policies:/app/policies:ro     # mount OPA Rego policies (for M3)
+    command: ["python", "-m", "uvicorn", "omnisql.gateway.main:app", "--host", "0.0.0.0", "--port", "8002"]
+
+  # ---------------------------------------------------------------------------
+  # Prototype Gateway (port 8001 — unchanged, all existing tests target this)
+  # ---------------------------------------------------------------------------
+  omnisql-prototype:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: ["python", "prototype/main.py"]
+
+  # ---------------------------------------------------------------------------
+  # Redis: shared distributed cache + rate limiter
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    # No persistence: data is ephemeral (by design — OmniSQL never persists source data)
+    command: redis-server --save "" --appendonly no --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # OPA sidecar (optional — enabled in M3 when OPA_URL is set)
+  # Uncomment to test OPA policy evaluation locally.
+  # ---------------------------------------------------------------------------
+  # opa:
+  #   image: openpolicyagent/opa:0.65.0-rootless
+  #   ports:
+  #     - "8181:8181"
+  #   command:
+  #     - "run"
+  #     - "--server"
+  #     - "--addr=0.0.0.0:8181"
+  #     - "--log-level=info"
+  #     - "/policies"
+  #   volumes:
+  #     - ./policies:/policies:ro
