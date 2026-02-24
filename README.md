@@ -218,6 +218,115 @@ ORDER BY total_loc DESC LIMIT 10
 
 ---
 
+## How a Query Executes (Step by Step)
+
+A federated query like this touches 3 SaaS APIs and joins them in-memory:
+
+```sql
+SELECT gh.pr_id, ji.issue_key, li.title
+FROM github.pull_requests gh
+JOIN jira.issues ji ON gh.branch = ji.branch_name
+JOIN linear.issues li ON gh.team_id = li.team
+WHERE gh.status = 'merged'
+```
+
+### Step 1: SQL Parsing (sqlglot AST)
+
+The QueryPlanner parses the SQL into an abstract syntax tree using sqlglot. It extracts:
+- **Table references**: `github.pull_requests`, `jira.issues`, `linear.issues`
+- **Alias map**: `gh → github.pull_requests`, `ji → jira.issues`, `li → linear.issues`
+
+### Step 2: Predicate Classification
+
+For each table, the planner walks the WHERE clause and classifies every `col = value` predicate:
+
+| Predicate | Table Owner | Pushable? | Result |
+|---|---|---|---|
+| `gh.status = 'merged'` | `github.pull_requests` (alias `gh`) | `status` is in GitHub's `pushable_filters` | Pushed to GitHub API |
+| `gh.status = 'merged'` | `jira.issues` (alias `ji`) | Qualifier `gh` doesn't match `ji` | Skipped |
+| `gh.status = 'merged'` | `linear.issues` (alias `li`) | Qualifier `gh` doesn't match `li` | Skipped |
+
+This prevents the critical bug where `status = 'merged'` would be pushed to Jira (which has no `merged` status).
+
+### Step 3: Build Execution DAG
+
+Three FetchNodes are created, all with `depends_on = []` (no inter-source dependencies):
+
+```
+FetchNode("github",  pushdown={"status": "merged"}, depends_on=[])
+FetchNode("jira",    pushdown={},                    depends_on=[])
+FetchNode("linear",  pushdown={},                    depends_on=[])
+```
+
+Kahn's topological sort produces **one wave** — all three nodes can execute in parallel.
+
+### Step 4: Parallel API Fan-Out
+
+```
+         ┌─────────────────────────┐
+         │     asyncio.gather()     │
+         └──┬──────┬──────┬────────┘
+            │      │      │
+      GitHub API  Jira API  Linear API
+     (status=merged) (all)    (all)
+        ~24 rows   120 rows  50 rows
+```
+
+Each connector goes through: **Cache check → Rate limit check → Fetch with retry → Cache write-back**.
+Total latency = `max(github, jira, linear)`, not the sum.
+
+### Step 5: Security Enforcement (RLS + CLS)
+
+Before data reaches DuckDB, per-source security rules from the tenant config are applied:
+- **RLS (Row-Level Security)**: Filter rows by user's team. Mobile team dev sees only mobile team data.
+- **CLS (Column-Level Security)**: Mask or block sensitive columns. QA role gets `author: [HIDDEN]`.
+
+### Step 6: DuckDB Materialization + Join Execution
+
+```
+         ┌───────────────────────────┐
+         │     DuckDB  :memory:       │
+         │                            │
+         │  github_pull_requests (24) │
+         │  jira_issues         (120) │
+         │  linear_issues        (50) │
+         └───────────────────────────┘
+                     │
+           DuckDB optimizer decides:
+           1. gh ⋈ ji  ON branch = branch_name
+           2. result ⋈ li  ON team_id = team
+                     │
+                     ▼
+              Final result (~8 rows)
+```
+
+Each dataset is registered as a temporary DuckDB view (per-request `:memory:` connection — thread-safe). DuckDB's own query optimizer picks the join order, join algorithm (hash/merge/nested-loop), and applies any remaining WHERE filters.
+
+### Step 7: Response
+
+The engine returns the result with metadata:
+
+```json
+{
+  "rows": [...],
+  "columns": ["pr_id", "issue_key", "title"],
+  "freshness_ms": 245,
+  "from_cache": false,
+  "rate_limit_status": {"remaining": 47, "capacity": 50},
+  "timing": {
+    "total_ms": 320,
+    "planning_ms": 2,
+    "fetch_ms": 290,
+    "security_ms": 1,
+    "duckdb_ms": 27
+  }
+}
+```
+
+Every response includes `freshness_ms` (data age), `rate_limit_status` (remaining API budget), and `timing` breakdown so consumers know exactly what happened.
+
+---
+
 ## Web Console
 
 Access at `http://localhost:8001/` for one-click query demos.
